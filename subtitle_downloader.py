@@ -27,7 +27,7 @@ import zipfile, tempfile
 
 DEBUG=0
 #USER_AGENT="Mozilla/5.0 (X11; Linux i686; rv:5.0) Gecko/20100101 Firefox/5.0"
-USER_AGENT="subtitle_downloader/1.0"
+USER_AGENT="subtitle_downloader/1.1"
 PID=os.getpid()
 BINARY=os.path.basename(sys.argv[0])
 OVERWRITE=False
@@ -106,12 +106,22 @@ def CheckLanguage(LANGUAGE):
 			return True
 	return False
 	
-def Message(text):
-	global DEBUG,PID,BINARY
-	date=time.time()
-	message="%s (%s) %s %s" % (BINARY,PID,date,text)
-	if DEBUG > 0:
-		print message
+def Message(TEXT,FORCE=False,LEVEL=0,SYSLOG=False):
+	global DEBUG
+	import syslog
+	try:
+		TEXT=TEXT.decode("utf8")
+	except:
+		try:
+			TEXT=TEXT.encode("ascii", 'replace')
+		except:
+			TEXT=TEXT
+	#To syslog
+	syslog.syslog(TEXT)
+	#To screen
+	if int(DEBUG) > LEVEL or FORCE:
+		print TEXT
+
 
 def hashFile(name): 
       try: 
@@ -150,21 +160,29 @@ def hashFile(name):
                 return False
 
 def GetURLContent(URL):
-	global USER_AGENT
-	opener = urllib2.build_opener()
-	opener.addheaders = [('User-agent', USER_AGENT)]
+	global PROXY,USER_AGENT
+	import requests
+	if PROXY != "":
+		proxies = {
+			'http': PROXY,
+			'https': PROXY,
+		}
+		Message("Using proxy %s" % PROXY,3)
+	else:
+		proxies = {
+			'http': '',
+			'https': '',
+		}
+	headers = {'user-agent': USER_AGENT}
 	try:
-		furl=opener.open(URL)
-	#except urllib2.URLError:
-	except:
-		Message("Error opening URL '%s'" % (URL))
+		r=requests.get(URL, proxies=proxies)
+	except requests.exceptions.ConnectionError,e:
+		Message("Error getting content of URL '%s'. %s" % (URL,e))
 		return False
-	try:
-		content=furl.read()
-	except httplib.IncompleteRead:
-		Message("Error while reading URL '%s'" % (URL))
-		return False
-	return content
+	if r.status_code == requests.codes.ok:
+		return r.content
+	else:
+		return r.status_code
 	
 def ProcessArguments():
 	global DEBUG,OVERWRITE
